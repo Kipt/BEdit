@@ -517,3 +517,158 @@ struct Bitmap
 
 layout Bitmap;
 ```
+
+## Example - PNG
+
+```C++
+default(endianess = big);
+
+struct Header
+{
+    raw(1) transmissionByte;
+    string(3) pngMagic;
+    assert(pngMagic == "PNG");
+
+    string(2) lineEnding_DOS;
+    string(1) eofChar;
+    string(1) lineEnding_UNIX;
+};
+
+enum sRGB_Intent
+{
+    Perceptual,
+    RelativeColorimetric,
+    Saturation,
+    AbsoluteColorimetric,
+};
+
+struct Chunk_sRGB(var size)
+{
+    assert(size == 1);
+    sRGB_Intent(1) intent;
+};
+
+enum IHDR_ColorType
+{
+    Grayscale,
+    RGB = 2,
+    Palette,
+    GrayscaleWithAlpha,
+    RGBWithAlpha = 6
+};
+
+enum IHDR_Filter
+{
+    None,
+    Sub,
+    Up,
+    Average,
+    Paeth,
+};
+
+enum IHDR_Interlace
+{
+    None,
+    Adam7,
+};
+
+struct Chunk_IHDR(var size)
+{
+    assert(size == 13);
+
+    u(4) width;
+    u(4) height;
+    u(1) bitDepth;
+    IHDR_ColorType(1) colorType;
+    u(1) compressionMethod;
+    assert(compressionMethod == 0);
+
+    IHDR_Filter(1) filterMethod;
+    IHDR_Interlace(1) interlaceMethod;
+};
+
+struct Chunk_gAMA(var size)
+{
+    assert(size == 4);
+    u(4) factor;
+};
+
+enum pHYs_Unit
+{
+    Unknown,
+    Meters,
+};
+
+struct Chunk_pHYs(var size)
+{
+    assert(size == 9);
+
+    u(4) ppuX;
+    u(4) ppuY;
+    pHYs_Unit(1) unit;
+};
+
+struct Chunk_tEXt(var size)
+{
+    string(size) value;
+};
+
+struct Chunk_IDAT(var size)
+{
+    hidden(size) data;
+    print("Pixel data parsing left as reader's exercise.");
+};
+
+struct Chunk
+{
+    u(4) size;
+    string(4) type;
+    if (type == "IHDR")
+    {
+        Chunk_IHDR(size) IHDR;
+    }
+    else if (type == "tEXt")
+    {
+        Chunk_tEXt(size) tEXt;
+    }
+    else if (type == "sRGB")
+    {
+        Chunk_sRGB(size) sRGB;
+    }
+    else if (type == "gAMA")
+    {
+        Chunk_gAMA(size) gAMA;
+    }
+    else if (type == "pHYs")
+    {
+        Chunk_pHYs(size) pHYs;
+    }
+    else if (type == "IDAT")
+    {
+        Chunk_IDAT(size) IDAT;
+    }
+    else
+    {
+        if (size)
+        {
+            raw(size) data;
+        }
+    }
+    u(4) crc;
+};
+
+struct PNG
+{
+    Header header;
+    Chunk ihdrChunk;
+    assert(ihdrChunk.type == "IHDR");
+
+    while (current_address() < size_of_file)
+    {
+        Chunk chunk;
+    }
+};
+
+layout PNG;
+
+```
