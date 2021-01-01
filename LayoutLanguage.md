@@ -97,6 +97,56 @@ Just like in C the first enum value is implicitly zero and any other enum value 
 
 Note that unlike C, the enum doesn't have an implicit size. The size of the type is specified in the scalar declaration.
 
+## Default Command
+
+The `default` command is used to specify global default settings. Currently the only setting available is byte order.
+
+```C++
+default(endianess = big);
+// or 
+default(endianess = little);
+```
+
+Byte order is `little` unless specified earlier as `big`. Note that `default` will apply to all lines of texts after it appears.
+
+```C++
+default(endianess = big);
+
+struct Foo
+{
+    u(4) bigNumber;
+};
+
+default(endianess = little);
+
+struct Bar
+{
+    u(4) littleNumber;
+};
+
+struct FooBar
+{
+    Foo foo; // foo scalars are big-endian
+    Bar bar; // bar scalars are little-endian
+};
+
+layout FooBar;
+```
+
+## Layout Command
+
+The `layout` command tells BEdit what type the binary file starts with. Multiple `layout` commands may be used, they are then interpreted to be after each other.
+
+```C++
+struct A { u(4) a; };
+struct B { u(4) b; };
+
+layout A; // Start address of A is zero.
+layout B; // Start address of B is four.
+```
+
+If a layout file lacks the `layout` command no members are declared of the binary file.
+
 ## Struct Types
 
 Structs are more like functions than C structs, you can pass parameters to it and evaluate expressions, but they serve the same purpose - to define what members a composite type contains.
@@ -137,15 +187,15 @@ All variables are interpreted as 64-bit signed integers.
 ### Statements
 #### Struct Member Declarations
 
-Members are declared by `optional-address-specifier` `scalar-type-declaration` or `struct-name` `optional-array-size-specifier` `;`.
+Members are declared by `optional-address-specifier` `scalar-type-declaration` or `struct-name` `member-name` `optional-array-size-specifier` `;`.
 
-By default a member declared has the address of the previous member declared plus the size of the member, or zero if it's the first member. Observe that no padding is applied to guarantee that the members are aligned. To overwrite the address of a member, use an address specifier:
+By default a member declared has the address of the previous member declared plus the size of that member, or zero for the first member. Observe that no padding is applied to guarantee that the members are aligned. To overwrite the address of a member, use an address specifier:
 ```
 @(integer-expression)
 ```
-See [Integer Expression](#integer-expression) for details.
+See [Integer Expressions](#integer-expressions) for details.
 
-Note that the address specifier makes subsequent members declared after that member, appear after it. If this is not wanted you can use the `external` keyword. This can be useful if you have data that is "far away" to the struct you're declaring, but you still would like to treat it as a member.
+Note that the address specifier makes subsequent members declared after that member, appear after it. If this is not wanted you can use the `external` keyword. This can be useful if you have data that is "far away" from the struct you're declaring, but you still would like to treat it as a member.
 ```C++
 struct UserData
 {
@@ -156,9 +206,9 @@ struct UserData
     ...
 };
 ```
-In the above example, `age` has the address of `address-of-nameSize + 4`. If the `name` member wouldn't have been declared `external` the address would've been `nameLocation + nameSize`.
+In the above example, `age` has the address of `address of nameSize + 4`. If the `name` member wouldn't have been declared `external` the address would've been `nameLocation + nameSize`.
 
-To get the current address (that is, the address the next member would be declared at) use `current_address()`. See [In-built Operators](#in-built-operators) for details.
+To get the current address (that is, the address the next member would be declared at) use `current_address()`.
 
 When specifying a scalar member see [Scalar types](#scalar-types), for a member that is a struct use the name of the type and any parameter it takes (if any) in parenthesis as:
 ```C++
@@ -249,7 +299,7 @@ struct Shape(var type)
 
 `for`, `while` and `do-while` loops are supported in the Layout Language, but are slightly different.
 
-For loop is in form: `for` `(` `var` `var-name` `=` `integer-expression` `;` `integer-expression` `;` `assignment-expression` `)` `{` ... `}` (observe again the `{` and `}` are mandatory).
+For loop is in form: `for` `(` `var` `var-name` `=` `integer-expression` `;` `integer-expression` `;` `assignment-expression` `)` `{` ... `}` (observe again the `{` and `}` are mandatory). Note that the _comma-operator_ is not supported.
 
 ```C++
 struct Foo
@@ -262,7 +312,7 @@ struct Foo
 };
 ```
 
-`while` and `do-while` loops are very similar to the C variant, except that the Layout Language doesn't have a concept of scope. That means a `do-while` loop can use a variable declared inside the scope in the loop-terminating expression.
+`while` and `do-while` loops are very similar to the C variant, except that the Layout Language doesn't have a concept of scope. That means a `do-while` loop can use a variable declared inside the block in the loop-terminating expression.
 
 ```C++
 struct Foo
@@ -278,7 +328,7 @@ struct Foo
 
 #### Assignment Expressions
 
-Local variables (and struct paramters) may be mutated through assignment expressions. These are in the form `variable-name` `=` `integer-expression`. The Layout Language doens't support `++i` or similar, currently you have to write the longer expression.
+Local variables (and struct paramters) may be mutated through assignment expressions. These are in the form `variable-name` `=` `integer-expression`. The Layout Language doesn't support `++i` or similar, currently you have to write the longer expression.
 
 ```C++
 struct Foo
@@ -291,7 +341,7 @@ struct Foo
 
 #### Integer Expressions
 
-All math in the Layout Language is done with signed 64-bit integers. The operators supported are similar to C.
+Integer expressions consist of _operators_ and _values_. All math in the Layout Language is done with signed 64-bit integers, as such there is no integer promotion during operators. The operators supported are similar to C.
 
 Unary operators are:
 ```
@@ -307,6 +357,7 @@ Binary operators are:
 / division
 + addition
 - subtraction
+% modulo
 
 < less than
 <= less than or equal
@@ -326,4 +377,143 @@ Binary operators are:
 
 Note that the Layout Language lacks both unary `+` and the ternary operator `?:`. Also note that `abs` is treated as a unary operator, this means `abs -1` evaluates to `1`. Operator precedence and associativity is the same as in C (`abs` has same precedence as the other unary operators).
 
-Parenthesis may be added to change precedence, `2 * 5 + 1` evaluates to `11` while `2 * (5 + 1)` evaluates to `12`.
+Values can be integer literals, string literals, struct members, enum values, local variables, `current_address()`, `size_of_file` or sub-expressions `(...)`.
+
+Integer literals supported are: 
+- binary (prefix `0b` or `0B`)
+- hexadecimal (prefix `0x` or `0X`)
+- octal (prefix `0`)
+- decimal
+
+Any single-quote character (`'`) inside the literal is ignored while parsing. Unlike C++14 this character is ignored even if it's the first character after the prefix.
+
+```
+var value = 0b'0000'0000''1111'1111 == 0x0f;
+```
+
+String literals may be used as values if it can fit a 64-bit signed integer. The string is interpreted in byte order, that is:
+```C++
+// ASCII: 'a' = 0x64  ' ' = 0x20
+"a " == 0x2064 // Note that integer literals are written with most significant digits first.
+```
+
+Escape sequences supported in string literals are `\n`, `\r`, `\\`, `\t` and `\0`.
+
+Struct scalar members may be used as values if they can be interpreted as a 64-bit signed integer. For nested members use `.` for access as:
+```C++
+struct Bar
+{
+    u(2) value;
+};
+
+struct Foo
+{
+    Bar bar;
+    s(8) otherValue;
+    
+    var a = bar.value;
+    var b = otherValue + a;
+};
+```
+
+If a member appears multiple times (due to a loop expression), the most recent value is used when loading it.
+
+Note that byte order swapping may occur during loading of members
+```C++
+// Expected file content: AA BB BB AA
+struct Data
+{
+    u(2, big) a;
+    u(2, little) b;
+    
+    assert(a == b);
+};
+```
+
+To get the current address (the address the next member would be declared at) use `current_address()`. This value changes everytime you declare a non-external member. You can also modify it by using the _address-specifier_ when declaring a member. `size_of_file` can be used to get the total size of the binary file being evaluated.
+
+```C++
+struct Foo
+{
+    string(4) magic;
+    
+    var remainingSizeOfFile = size_of_file - current_address();
+    raw(remainingSizeOfFile) remainingData;
+};
+```
+
+#### Debugging: Print and Assert
+
+To print a value use `print(integer-expression)`, `print("message", integer-expression)` or `print("message")`. The message and result of the integer-expression is displayed by the GUI at a suitable location (usually after the previously declared member).
+
+To stop execution and report a fatal error use `assert(integer-expression)`.
+
+## Example - BMP
+
+```C++
+enum PixelCompression
+{
+    BI_RGB,
+    BI_RLE8,
+    BI_RLE4,
+    BI_BITFIELDS,
+    BI_JPEG,
+    BI_PNG,
+    BI_ALPHABITFIELDS,
+    BI_CMYK = 11,
+    BI_CMYKRLE8,
+    BI_CMYKRLE4,
+};
+
+struct FileHeader
+{
+    string(2) Signature;
+    assert(Signature == "BM");
+
+    u(4) FileSize;
+    raw(2) Reserved[2];
+    u(4, hex) FileOffsetToPixelArray;
+};
+
+struct InfoHeader
+{
+    u(4) Size;
+    assert(Size == 40);
+
+    s(4) Width;
+    s(4) Height;
+
+    u(2) PlaneCount;
+    u(2) BitsPerPixel;
+    PixelCompression(4) Compression;
+    u(4) ImageSize;
+    u(4) XPixelsPerMeter;
+    u(4) YPixelsPerMeter;
+    u(4) ColorsInColorTable;
+    u(4) ImportantColorCount;
+};
+
+struct PixelRow(var compression, var bitsPerPixel, var width)
+{
+    assert(bitsPerPixel % 8 == 0);
+    var sizeInBytes = 4 * ((bitsPerPixel * width + 31) / 32);
+    var paddingInBytes = sizeInBytes - bitsPerPixel * width / 8;
+
+    raw(bitsPerPixel / 8) Pixels[width];
+
+    if (paddingInBytes)
+    {
+        raw(paddingInBytes) Padding;
+    }
+};
+
+struct Bitmap
+{
+    FileHeader Header;
+    InfoHeader Info;
+
+    @(Header.FileOffsetToPixelArray) PixelRow(Info.Compression, Info.BitsPerPixel, Info.Width) Rows[abs Info.Height];
+};
+
+layout Bitmap;
+```
