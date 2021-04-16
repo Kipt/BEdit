@@ -153,7 +153,7 @@ Structs are more like functions than C structs, you can pass parameters to it an
 
 The syntax is:
 ```
-struct name-of-struct optional-param-list
+struct optional-category-specification name-of-struct optional-param-list
 {
     statements...
 };
@@ -184,10 +184,22 @@ struct StructWithParams(var paramA, var paramB, var paramC)
 
 All variables are interpreted as 64-bit signed integers.
 
+If you wish to fetch the type dynamically, you need to specify a category identifier and a type number as:
+```C++
+struct(CategoryIdentifier, 1234) StructName 
+{
+    ....
+};
+```
+
+You may then use the type as part of _struct member declarations_ to do a dynamic look-up, that is you can dynamically select the type of the member based on the category specified and an integer expression.
+
+All types of a category must have the same amount of parameters (if any).
+
 ### Statements
 #### Struct Member Declarations
 
-Members are declared by `optional-address-specifier` `scalar-type-declaration` or `struct-name` `member-name` `optional-array-size-specifier` `;`.
+Members are declared by `optional-address-specifier` `type-declaration` `member-name` `optional-array-size-specifier` `;` where `type-declaration` is one of: `scalar-declaration`, `struct-declaration` (`struct-name` `optional-param-list`) or `category-declaration` (`category-identifier` `[` `integer-expression` `]` `optional-param-list`).
 
 By default a member declared has the address of the previous member declared plus the size of that member, or zero for the first member. Observe that no padding is applied to guarantee that the members are aligned. To overwrite the address of a member, use an address specifier:
 ```
@@ -195,7 +207,7 @@ By default a member declared has the address of the previous member declared plu
 ```
 See [Integer Expressions](#integer-expressions) for details.
 
-Note that the address specifier makes subsequent members declared after that member, appear after it. If this is not wanted you can use the `external` keyword. This can be useful if you have data that is "far away" from the struct you're declaring, but you still would like to treat it as a member.
+Note that the address specifier makes subsequent members declared after that member, appear after it in memory. If this is not wanted you can use the `external` keyword. This can be useful if you have data that is "far away" from the struct you're declaring, but you still would like to treat it as a member.
 ```C++
 struct UserData
 {
@@ -208,7 +220,7 @@ struct UserData
 ```
 In the above example, `age` has the address of `address of nameSize + 4`. If the `name` member wouldn't have been declared `external` the address would've been `nameLocation + nameSize`.
 
-To get the current address (that is, the address the next member would be declared at) use `current_address()`.
+To get the current address (that is, the address the next member would be declared at) use `@` (or now deprecated `current_address()`).
 
 When specifying a scalar member see [Scalar types](#scalar-types), for a member that is a struct use the name of the type and any parameter it takes (if any) in parenthesis as:
 ```C++
@@ -220,6 +232,20 @@ struct Bar
     Baz baz;
 };
 ```
+
+To dynamically choose type based on some expression, declare the type using a category with a value specifying which type to use as:
+```C++
+struct(MyCategory, 1) Foo { ... };
+struct(MyCategory, 2) Bar { ... };
+
+struct FooBar
+{
+    u(4) selector;
+    MyCategory[selector - 1] myMember;
+};
+```
+
+If the category with the type number doesn't exist (in above case `selector - 1`) an error is reported and execution is aborted. You can use `has_type(category, number)` to query if the type exists.
 
 Declaring an array is similar to how you would do it in C (with `[array_size]`), but the size of the array may be a result of an [integer expression](#integer-expression).
 
@@ -291,6 +317,45 @@ struct Shape(var type)
     else if (...)
     {
         ...
+    }
+};
+```
+
+Another way to do the same is with categories as:
+```C++
+enum Shape
+{
+    Circle,
+    Rectangle,
+    ...
+};
+
+struct(ShapeType, Shape.Circle) Circle
+{
+    f(4) x;
+    f(4) y;
+    f(4) radius;
+};
+
+struct(ShapeType, Shape.Rectangle) Rectangle
+{
+    f(4) minX;
+    f(4) minY;
+    f(4) width;
+    f(4) height;
+};
+
+...
+
+struct Shape(var type)
+{
+    if (has_type(ShapeType, type))
+    {
+        ShapeType[type] shape;
+    }
+    else
+    {
+        print("Unrecognized type, ignoring.");
     }
 };
 ```
@@ -375,9 +440,9 @@ Binary operators are:
 ^ bitwise xor
 ```
 
-Note that the Layout Language lacks both unary `+` and the ternary operator `?:`. Also note that `abs` is treated as a unary operator, this means `abs -1` evaluates to `1`. Operator precedence and associativity is the same as in C (`abs` has same precedence as the other unary operators).
+Note that the Layout Language lacks both unary `+` and the ternary operator `?:`. Also note that `abs` is treated as a unary operator, this means `abs -1 * 5` evaluates to `5`. Operator precedence and associativity is the same as in C (`abs` has same precedence as the other unary operators).
 
-Values can be integer literals, string literals, struct members, enum values, local variables, `current_address()`, `size_of_file` or sub-expressions `(...)`.
+Values can be integer literals, string literals, struct members, enum values, local variables, `@` (or deprecated `current_address()`), `size_of_file`, `has_type(category, typeNumber)` or sub-expressions `(...)`.
 
 Integer literals supported are: 
 - binary (prefix `0b` or `0B`)
@@ -416,6 +481,8 @@ struct Foo
 };
 ```
 
+You cannot access nested members of members declared as using a category declaration.
+
 If a member appears multiple times (due to a loop expression), the most recent value is used when loading it.
 
 Note that byte order swapping may occur during loading of members
@@ -430,14 +497,14 @@ struct Data
 };
 ```
 
-To get the current address (the address the next member would be declared at) use `current_address()`. This value changes everytime you declare a non-external member. You can also modify it by using the _address-specifier_ when declaring a member. `size_of_file` can be used to get the total size of the binary file being evaluated.
+To get the current address (the address the next member would be declared at) use `@` (or deprecated `current_address()`). This value changes everytime you declare a non-external member. You can also modify it by using the _address-specifier_ when declaring a member, or through a direct assignment as a separate statement. `size_of_file` can be used to get the total size of the binary file being evaluated.
 
 ```C++
 struct Foo
 {
     string(4) magic;
     
-    var remainingSizeOfFile = size_of_file - current_address();
+    var remainingSizeOfFile = size_of_file - @;
     raw(remainingSizeOfFile) remainingData;
 };
 ```
@@ -525,127 +592,108 @@ default(endianess = big);
 
 struct Header
 {
-    raw(1) transmissionByte;
-    string(3) pngMagic;
-    assert(pngMagic == "PNG");
-
-    string(2) lineEnding_DOS;
-    string(1) eofChar;
-    string(1) lineEnding_UNIX;
+	raw(1) transmissionByte;
+	string(3) pngMagic;
+	assert(pngMagic == "PNG");
+    
+	string(2) lineEnding_DOS;
+	string(1) eofChar;
+	string(1) lineEnding_UNIX;
 };
 
 enum sRGB_Intent
 {
-    Perceptual,
-    RelativeColorimetric,
-    Saturation,
-    AbsoluteColorimetric,
+	Perceptual,
+	RelativeColorimetric,
+	Saturation,
+	AbsoluteColorimetric,
 };
 
-struct Chunk_sRGB(var size)
+struct(Chunk, "sRGB") sRGB(var size)
 {
-    assert(size == 1);
-    sRGB_Intent(1) intent;
+	assert(size == 1);
+	sRGB_Intent(1) intent;
 };
 
 enum IHDR_ColorType
 {
-    Grayscale,
-    RGB = 2,
-    Palette,
-    GrayscaleWithAlpha,
-    RGBWithAlpha = 6
+	Grayscale,
+	RGB = 2,
+	Palette,
+	GrayscaleWithAlpha,
+	RGBWithAlpha = 6
 };
 
 enum IHDR_Filter
 {
-    None,
-    Sub,
-    Up,
-    Average,
-    Paeth,
+	None,
+	Sub,
+	Up,
+	Average,
+	Paeth,
 };
 
 enum IHDR_Interlace
 {
-    None,
-    Adam7,
+	None,
+	Adam7,
 };
 
-struct Chunk_IHDR(var size)
+struct(Chunk, "IHDR") IHDR(var size)
 {
-    assert(size == 13);
-
-    u(4) width;
-    u(4) height;
-    u(1) bitDepth;
-    IHDR_ColorType(1) colorType;
-    u(1) compressionMethod;
-    assert(compressionMethod == 0);
-
-    IHDR_Filter(1) filterMethod;
-    IHDR_Interlace(1) interlaceMethod;
+	assert(size == 13);
+	
+	u(4) width;
+	u(4) height;
+	u(1) bitDepth;
+	IHDR_ColorType(1) colorType;
+	u(1) compressionMethod;
+	assert(compressionMethod == 0);
+	
+	IHDR_Filter(1) filterMethod;
+	IHDR_Interlace(1) interlaceMethod;
 };
 
-struct Chunk_gAMA(var size)
+struct(Chunk, "gAMA") gAMA(var size)
 {
-    assert(size == 4);
-    u(4) factor;
+	assert(size == 4);
+	u(4) factor;
 };
 
 enum pHYs_Unit
 {
-    Unknown,
-    Meters,
+	Unknown,
+	Meters,
 };
 
-struct Chunk_pHYs(var size)
+struct(Chunk, "pHYs") pHYs(var size)
 {
-    assert(size == 9);
-
-    u(4) ppuX;
-    u(4) ppuY;
-    pHYs_Unit(1) unit;
+	assert(size == 9);
+	
+	u(4) ppuX;
+	u(4) ppuY;
+	pHYs_Unit(1) unit;
 };
 
-struct Chunk_tEXt(var size)
+struct(Chunk, "tEXt") tEXt(var size)
 {
-    string(size) value;
+	string(size) value;
 };
 
-struct Chunk_IDAT(var size)
+struct(Chunk, "IDAT") IDAT(var size)
 {
-    hidden(size) data;
-    print("Pixel data parsing left as reader's exercise.");
+	hidden(size) data;
+	print("Pixel data parsing left as reader's exercise.");
 };
 
 struct Chunk
 {
-    u(4) size;
-    string(4) type;
-    if (type == "IHDR")
+	u(4) size;
+	string(4) type;
+    
+    if (has_type(Chunk, type))
     {
-        Chunk_IHDR(size) IHDR;
-    }
-    else if (type == "tEXt")
-    {
-        Chunk_tEXt(size) tEXt;
-    }
-    else if (type == "sRGB")
-    {
-        Chunk_sRGB(size) sRGB;
-    }
-    else if (type == "gAMA")
-    {
-        Chunk_gAMA(size) gAMA;
-    }
-    else if (type == "pHYs")
-    {
-        Chunk_pHYs(size) pHYs;
-    }
-    else if (type == "IDAT")
-    {
-        Chunk_IDAT(size) IDAT;
+        Chunk[type](size) chunk;
     }
     else
     {
@@ -654,21 +702,21 @@ struct Chunk
             raw(size) data;
         }
     }
-    u(4) crc;
+    
+	u(4) crc;
 };
 
 struct PNG
 {
-    Header header;
-    Chunk ihdrChunk;
-    assert(ihdrChunk.type == "IHDR");
-
-    while (current_address() < size_of_file)
-    {
-        Chunk chunk;
-    }
+	Header header;
+	Chunk ihdrChunk;
+	assert(ihdrChunk.type == "IHDR");
+	
+	while (@ < size_of_file)
+	{
+		Chunk chunk;
+	}
 };
 
 layout PNG;
-
 ```
