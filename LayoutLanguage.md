@@ -38,9 +38,11 @@ Byte order, when present, will overwrite the default byte order for that scalar.
 
 Radixes are: `binary` (base 2), `octal` (base 8) and `hex` (base 16). If radix specifier is not present the default base 10 is used to represent the data. Note that types string and raw will ignore the radix.
 
+Signed integers are assumed to be stored using two's complement representation.
+
 Scalar examples:
- - `u(4)` - 4-byte integer, displayed as decimal.
- - `s(8, hex, big)` - 8-byte big endian (most significant bit first) integer, displayed in hexadecimal.
+ - `u(4)` - 4-byte unsigned integer, displayed as decimal.
+ - `s(8, hex, big)` - 8-byte big endian (most significant bit first) signed integer, displayed in hexadecimal.
  - `string(1)` - 1-byte ASCII string (similar to char in C).
  - `hidden(256)` - 256 ignored bytes.
  - `Foo(2)` - (where Foo is an enum) 2-byte enum value displayed as Foo member(s).
@@ -222,6 +224,8 @@ In the above example, `age` has the address of `address of nameSize + 4`. If the
 
 To get the current address (that is, the address the next member would be declared at) use `@` (or now deprecated `current_address()`).
 
+Any member may be declared as `hidden` to exclude that member from being presented by BEdit. To hide a member add `hidden` before the type declaration, after address specifier if present. A hidden member can still be used in integer expressions, it only hides the value from being presented. Note that adding `hidden` before a scalar declaration is the same as declaring the scalar using `hidden` type.
+
 When specifying a scalar member see [Scalar types](#scalar-types), for a member that is a struct use the name of the type and any parameter it takes (if any) in parenthesis as:
 ```C++
 struct Foo(var a) { ... };
@@ -393,16 +397,31 @@ struct Foo
 
 #### Assignment Expressions
 
-Local variables (and struct paramters) may be mutated through assignment expressions. These are in the form `variable-name` `=` `integer-expression`. The Layout Language doesn't support `++i` or similar, currently you have to write the longer expression.
+Local variables (and struct parameters) may be mutated through assignment expressions. These are in the form `variable-name` `assignment-operator` `integer-expression`. The Layout Language doesn't support increment and decrement operators (`++i`, `i--` and similar), currently you have to write the longer expression. But the same compound assignment operators as in C are supported (`<<=`, `>>=`, `^=`, `|=`, `&=`, `%=`, `/=`, `*=`, `-=`, `+=`, `=`).
 
 ```C++
 struct Foo
 {
     var i; // Default value is zero.
-    i = i + 1;
+    i += 1;
+    // Or equivalent: i = i + 1;
     ...
 };
 ```
+
+Unlike C the assignment expression _may not_ appear inside an integer expression. That is
+
+```C++
+struct Foo
+{
+    var i;
+    var j;
+    
+    i = 1 + (j += 5); // Not supported.
+};
+```
+
+is not supported.
 
 #### Integer Expressions
 
@@ -440,9 +459,9 @@ Binary operators are:
 ^ bitwise xor
 ```
 
-Note that the Layout Language lacks both unary `+` and the ternary operator `?:`. Also note that `abs` is treated as a unary operator, this means `abs -1 * 5` evaluates to `5`. Operator precedence and associativity is the same as in C (`abs` has same precedence as the other unary operators).
+Note that the Layout Language lacks both unary `+` and the ternary operator `?:`. Also note that `abs` is treated as a unary operator, this means `abs -1 * -5` evaluates to `-5` (and `abs(-1 * -5)` is `5`). Operator precedence and associativity is the same as in C (`abs` has same precedence as the other unary operators).
 
-Values can be integer literals, string literals, struct members, enum values, local variables, `@` (or deprecated `current_address()`), `size_of_file`, `has_type(category, typeNumber)` or sub-expressions `(...)`.
+Values can be integer literals, string literals, struct members, enum values, local variables, `@` (or deprecated `current_address()`), `size_of_file`, `has_type(category, typeNumber)`, `sizeof(...)` or sub-expressions `(...)`.
 
 Integer literals supported are: 
 - binary (prefix `0b` or `0B`)
@@ -507,6 +526,31 @@ struct Foo
     var remainingSizeOfFile = size_of_file - @;
     raw(remainingSizeOfFile) remainingData;
 };
+```
+
+`sizeof` is similar to as it is in C, however as the size of a type in BEdit may be dependent on the data of the file `sizeof` has an optional address specified. Syntax is `sizeof` `(` `optional-address-specifier` `struct-type` `)`. If the address specifier is not present the current address is used.
+
+```C++
+// Expected file content 01 02 .. FE FF
+
+struct Bar
+{
+    u(1, hex) a;
+    raw(a) b;
+};
+
+struct Foo
+{
+    print(sizeof(Bar));      // Prints '2'
+    Bar bar;
+    print(sizeof(Bar));      // Prints '4'
+    print(sizeof(@(1) Bar)); // Prints '3'
+    
+    // print(sizeof(bar));   // Not supported.
+    // print(sizeof(u(4));   // Not supported, but it's 4.
+};
+
+layout Foo;
 ```
 
 #### Debugging: Print and Assert
